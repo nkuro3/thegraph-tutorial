@@ -1,73 +1,67 @@
 import {
-  Approval as ApprovalEvent,
-  ApprovalForAll as ApprovalForAllEvent,
-  OwnershipTransferred as OwnershipTransferredEvent,
   Transfer as TransferEvent
-} from "../generated/Token/Token"
-import {
-  Approval,
-  ApprovalForAll,
-  OwnershipTransferred,
-  Transfer
-} from "../generated/schema"
+} from "../generated/Token/Token";
+import { Lady, User } from "../generated/schema";
+import { log, ipfs, json, JSONValue } from "@graphprotocol/graph-ts";
 
-export function handleApproval(event: ApprovalEvent): void {
-  let entity = new Approval(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.owner = event.params.owner
-  entity.approved = event.params.approved
-  entity.tokenId = event.params.tokenId
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleApprovalForAll(event: ApprovalForAllEvent): void {
-  let entity = new ApprovalForAll(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.owner = event.params.owner
-  entity.operator = event.params.operator
-  entity.approved = event.params.approved
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleOwnershipTransferred(
-  event: OwnershipTransferredEvent
-): void {
-  let entity = new OwnershipTransferred(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.previousOwner = event.params.previousOwner
-  entity.newOwner = event.params.newOwner
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
+const ipfsHash = "QmYaXDgBEbPCrEEVZar5nWwuoiJBUcWFN9cztJXdMATFMa";
 
 export function handleTransfer(event: TransferEvent): void {
-  let entity = new Transfer(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.from = event.params.from
-  entity.to = event.params.to
-  entity.tokenId = event.params.tokenId
+  let lady = Lady.load(event.params.tokenId.toString());
 
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
+  if (lady == null) {
+    lady = new Lady(event.params.tokenId.toString());
+    lady.tokenID = event.params.tokenId;
+    lady.tokenURI = "/" + event.params.tokenId.toString();
 
-  entity.save()
+    let metadata = ipfs.cat(ipfsHash + lady.tokenURI);
+    if (metadata) {
+      const value = json.fromBytes(metadata).toObject();
+      if (value) {
+        const name = value.get("name");
+        if (name) {
+          lady.name = name.toString();
+        }
+      }
+      let attributes: JSONValue[];
+      let ladyAttributes = value.get("attributes");
+      if (ladyAttributes) {
+        attributes = ladyAttributes.toArray();
+
+        for (let i = 0; i < attributes.length; i++) {
+          let item = attributes[i].toObject();
+          let trait: string;
+          let traitName = item.get("trait_type");
+          if (traitName) {
+            trait = traitName.toString();
+            let value: string;
+            let traitValue = item.get("value");
+            if (traitValue) {
+              value = traitValue.toString();
+              if (trait == "Hair") {
+                lady.hairStyle = value;
+              }
+              if (trait == "Skin") {
+                lady.skinColor = value;
+              }
+              if (trait == "Eyes") {
+                lady.eyeColor = value;
+              }
+              if (trait == "Face Expression") {
+                lady.faceExpression = value;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  lady.owner = event.params.to.toHexString();
+  lady.save();
+
+  let user = User.load(event.params.to.toHexString());
+  if (!user) {
+    user = new User(event.params.to.toHexString());
+    user.save();
+  }
 }
